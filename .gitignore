@@ -1,0 +1,20 @@
+# Binaries built by user
+/cmd/*/tcpdump-lite
+/cmd/*/icmp-echo
+/cmd/*/tcp-echo
+/cmd/*/curl-lite
+tcpdump-lite
+icmp-echo
+tcp-echo
+curl-lite
+*.pcap
+*.pcapng
+cap.pcap
+*.test
+*.out
+coverage.txt
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.cache/
