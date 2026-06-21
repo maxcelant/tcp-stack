@@ -11,13 +11,18 @@ import (
 type Conn struct {
 	TCB *tcb.TCB
 
-	rcvBuf *RecvBuffer
+	rcvBuf *tcb.RecvBuffer
+	sndBuf *tcb.SendBuffer
 	mu     sync.RWMutex
 	closed bool
 }
 
 func (c *Conn) Read(p []byte) (int, error) {
 	return c.rcvBuf.Read(p)
+}
+
+func (c *Conn) Write(p []byte) (int, error) {
+	return c.sndBuf.Write(p), nil
 }
 
 func (c *Conn) State() tcb.State {
@@ -58,9 +63,10 @@ func (c *Conn) marshalIP(dst []byte, payloadSize uint16) ([]byte, error) {
 
 }
 
-func (c *Conn) send(flags uint8, payload []byte, f func([]byte) error) error {
+func (c *Conn) send(flags uint8, f func([]byte) error) error {
+	payload, i := c.sndBuf.NextChunk(c.TCB.Snd.WND)
 	buf := make([]byte, 20)
-	buf, err := c.marshalIP(buf, uint16(len(payload)))
+	buf, err := c.marshalIP(buf, i)
 	if err != nil {
 		return err
 	}
@@ -68,5 +74,10 @@ func (c *Conn) send(flags uint8, payload []byte, f func([]byte) error) error {
 	if err != nil {
 		return err
 	}
-	return f(slices.Concat(buf, payload))
+	err = f(slices.Concat(buf, payload))
+	if err != nil {
+		return err
+	}
+	c.TCB.Snd.NXT += uint32(i)
+	return nil
 }

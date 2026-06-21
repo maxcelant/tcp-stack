@@ -80,7 +80,8 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 			conn, exists := l.demux.Get(connKey)
 			if !exists {
 				conn = &Conn{
-					rcvBuf: NewRecvBuffer(),
+					rcvBuf: tcb.NewRecvBuffer(),
+					sndBuf: tcb.NewSendBuffer(1), // TODO Use ISS
 					TCB: &tcb.TCB{
 						State: tcb.StateListen,
 						Snd: tcb.Send{
@@ -112,7 +113,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				if ok := l.demux.Set(connKey, conn); !ok {
 					logger.Info("listener: connection already exists in demux map", "connKey", connKey, "state", conn.State().String())
 				}
-				if err := conn.send(FlagSYN|FlagACK, nil, func(b []byte) error {
+				if err := conn.send(FlagSYN|FlagACK, func(b []byte) error {
 					_, err := l.device.Write(b)
 					return err
 				}); err != nil {
@@ -127,7 +128,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				if seg.SeqNumber != conn.TCB.Recv.NXT {
 					logger.Warn("listener: SEQ does not equal RCV.NXT", "seq", seg.SeqNumber, "rcv.nxt", conn.TCB.Recv.NXT, "state", conn.State().String())
 					// Drop the payload and resend an ACK
-					if err := conn.send(FlagACK, nil, func(b []byte) error {
+					if err := conn.send(FlagACK, func(b []byte) error {
 						_, err := l.device.Write(b)
 						return err
 					}); err != nil {
@@ -158,7 +159,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				if seg.SeqNumber != conn.TCB.Recv.NXT {
 					logger.Warn("listener: SEQ does not equal RCV.NXT", "seq", seg.SeqNumber, "rcv.nxt", conn.TCB.Recv.NXT, "state", conn.State().String())
 					// Drop the payload and resend an ACK
-					if err := conn.send(FlagACK, nil, func(b []byte) error {
+					if err := conn.send(FlagACK, func(b []byte) error {
 						_, err := l.device.Write(b)
 						return err
 					}); err != nil {
@@ -167,19 +168,27 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 					}
 					continue
 				}
-				conn.rcvBuf.Write(payload)
-				conn.TCB.Recv.NXT += uint32(len(payload))
-				logger.Debug("connection", "RCV.NXT", conn.TCB.Recv.NXT, "state", conn.State().String())
-				if err := conn.send(FlagACK, nil, func(b []byte) error {
+				// We have some payload to send to the remote
+				if conn.TCB.Snd.UNA < seg.AckNumber && seg.AckNumber <= conn.TCB.Snd.NXT {
+					conn.TCB.Snd.UNA = seg.AckNumber
+					conn.sndBuf.Acked(seg.AckNumber)
+					conn.TCB.Snd.WND = seg.Window
+					logger.Debug("sending data to remote", "SND.NXT", conn.TCB.Snd.NXT, "state", conn.State().String())
+				}
+				// Got some payload, and we need to send it to the connection buffer
+				if len(payload) > 0 {
+					conn.rcvBuf.Write(payload)
+					conn.TCB.Recv.NXT += uint32(len(payload))
+					logger.Debug("retrieving data from remote", "RCV.NXT", conn.TCB.Recv.NXT, "state", conn.State().String())
+				}
+
+				if err := conn.send(FlagACK, func(b []byte) error {
 					_, err := l.device.Write(b)
 					return err
 				}); err != nil {
 					logger.Error("listener: failed to write to device", "error", err)
 					continue
 				}
-				// if InRange(seg.AckNumber, conn.TCB.Snd.NXT, conn.TCB.Snd.UNA) {
-				//
-				// }
 			}
 
 		}

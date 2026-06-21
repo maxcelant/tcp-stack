@@ -1,4 +1,4 @@
-package tcp
+package tcb
 
 import (
 	"io"
@@ -42,7 +42,7 @@ func (r *RecvBuffer) Read(p []byte) (int, error) {
 	// The clients buffer can be of any size, we fit as much as we can
 	n := copy(p, r.buf)
 	// Remove the data that was added to the clients buffer
-	r.buf = r.buf[:n]
+	r.buf = r.buf[n:]
 	return n, nil
 }
 
@@ -50,4 +50,6 @@ func (r *RecvBuffer) CloseWrite() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = true
+	// Awake all sleeping threads
+	r.cond.Broadcast()
 }
