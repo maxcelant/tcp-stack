@@ -80,6 +80,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 			conn, exists := l.demux.Get(connKey)
 			if !exists {
 				conn = &Conn{
+					device: d,
 					rcvBuf: tcb.NewRecvBuffer(),
 					sndBuf: tcb.NewSendBuffer(1), // TODO Use ISS
 					TCB: &tcb.TCB{
@@ -113,10 +114,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				if ok := l.demux.Set(connKey, conn); !ok {
 					logger.Info("listener: connection already exists in demux map", "connKey", connKey, "state", conn.State().String())
 				}
-				if err := conn.send(FlagSYN|FlagACK, func(b []byte) error {
-					_, err := l.device.Write(b)
-					return err
-				}); err != nil {
+				if err := conn.send(FlagSYN | FlagACK); err != nil {
 					logger.Error("listener: failed to write to device", "error", err)
 					continue
 				}
@@ -128,10 +126,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				if seg.SeqNumber != conn.TCB.Recv.NXT {
 					logger.Warn("listener: SEQ does not equal RCV.NXT", "seq", seg.SeqNumber, "rcv.nxt", conn.TCB.Recv.NXT, "state", conn.State().String())
 					// Drop the payload and resend an ACK
-					if err := conn.send(FlagACK, func(b []byte) error {
-						_, err := l.device.Write(b)
-						return err
-					}); err != nil {
+					if err := conn.send(FlagACK); err != nil {
 						logger.Error("listener: failed to write to device", "error", err)
 						continue
 					}
@@ -156,13 +151,10 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 				conn.TCB.State = tcb.StateEstablished
 				l.connCh <- conn
 			case tcb.StateEstablished:
-				if seg.SeqNumber != conn.TCB.Recv.NXT {
+				if seg.SeqNumber < conn.TCB.Recv.NXT {
 					logger.Warn("listener: SEQ does not equal RCV.NXT", "seq", seg.SeqNumber, "rcv.nxt", conn.TCB.Recv.NXT, "state", conn.State().String())
 					// Drop the payload and resend an ACK
-					if err := conn.send(FlagACK, func(b []byte) error {
-						_, err := l.device.Write(b)
-						return err
-					}); err != nil {
+					if err := conn.send(FlagACK); err != nil {
 						logger.Error("listener: failed to write to device", "error", err)
 						continue
 					}
@@ -182,10 +174,7 @@ func Listen(ctx context.Context, local netip.AddrPort) (*Listener, error) {
 					logger.Debug("retrieving data from remote", "RCV.NXT", conn.TCB.Recv.NXT, "state", conn.State().String())
 				}
 
-				if err := conn.send(FlagACK, func(b []byte) error {
-					_, err := l.device.Write(b)
-					return err
-				}); err != nil {
+				if err := conn.send(FlagACK); err != nil {
 					logger.Error("listener: failed to write to device", "error", err)
 					continue
 				}

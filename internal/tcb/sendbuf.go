@@ -32,16 +32,10 @@ func (s *SendBuffer) Acked(ack uint32) {
 }
 
 func (s *SendBuffer) NextChunk(size uint16) ([]byte, uint16) {
-	s.mu.RLock()
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if size > uint16(len(s.buf)) {
 		size = uint16(len(s.buf))
 	}
 	return s.buf[:size], size
-}
-
-func (s *SendBuffer) Len() uint16 {
-	s.mu.RLock()
-	defer s.mu.Unlock()
-	return uint16(len(s.buf))
 }

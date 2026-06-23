@@ -6,11 +6,13 @@ import (
 
 	"github.com/maxcelant/tcp-from-scratch/internal/ipv4"
 	"github.com/maxcelant/tcp-from-scratch/internal/tcb"
+	"github.com/maxcelant/tcp-from-scratch/internal/tun"
 )
 
 type Conn struct {
 	TCB *tcb.TCB
 
+	device *tun.Device
 	rcvBuf *tcb.RecvBuffer
 	sndBuf *tcb.SendBuffer
 	mu     sync.RWMutex
@@ -63,7 +65,7 @@ func (c *Conn) marshalIP(dst []byte, payloadSize uint16) ([]byte, error) {
 
 }
 
-func (c *Conn) send(flags uint8, f func([]byte) error) error {
+func (c *Conn) send(flags uint8) error {
 	payload, i := c.sndBuf.NextChunk(c.TCB.Snd.WND)
 	buf := make([]byte, 20)
 	buf, err := c.marshalIP(buf, i)
@@ -74,7 +76,7 @@ func (c *Conn) send(flags uint8, f func([]byte) error) error {
 	if err != nil {
 		return err
 	}
-	err = f(slices.Concat(buf, payload))
+	_, err = c.device.Write(slices.Concat(buf, payload))
 	if err != nil {
 		return err
 	}
