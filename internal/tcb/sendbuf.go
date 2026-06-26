@@ -23,19 +23,24 @@ func (s *SendBuffer) Write(p []byte) int {
 	return len(p)
 }
 
-func (s *SendBuffer) Acked(ack uint32) {
+func (s *SendBuffer) Acked(n uint32) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	i := ack - s.start
+	// The peer has acked up to n, we can remove that from the
+	// front of the buffer
+	i := n - s.start
 	if len(s.buf) != 0 {
 		s.buf = s.buf[i:]
 	}
-	s.start = ack
+	s.start = n
 }
 
 func (s *SendBuffer) NextChunk(next uint32, window uint16) ([]byte, uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// IMPORTANT: this is how much has already been sent, so we
+	// don't need to resend it. It says in the send buffer until
+	// its acked by the peer
 	sent := next - s.start
 	// Tells us whats already been sent
 	// If we've sent everything in the buffer thus far, then we can return

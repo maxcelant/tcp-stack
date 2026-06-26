@@ -250,6 +250,7 @@ func (c *Conn) send() error {
 	if err != nil {
 		return err
 	}
+	// Move the sequence forward by bytes written
 	c.TCB.Snd.NXT += uint32(i)
 	return nil
 }
