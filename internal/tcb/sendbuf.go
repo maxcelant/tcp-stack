@@ -42,8 +42,7 @@ func (s *SendBuffer) NextChunk(next uint32, window uint16) ([]byte, uint16) {
 	// don't need to resend it. It says in the send buffer until
 	// its acked by the peer
 	sent := next - s.start
-	// Tells us whats already been sent
-	// If we've sent everything in the buffer thus far, then we can return
+	// Means that we've already sent everything in the buffer
 	if sent >= uint32(len(s.buf)) {
 		return nil, 0
 	}

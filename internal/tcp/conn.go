@@ -93,9 +93,7 @@ func (c *Conn) loop() {
 		select {
 		case seg := <-c.segCh: // from the demux goroutine
 			c.handleSegment(seg) // the state-machine switch lives here now
-			if c.State() == tcb.StateEstablished {
-				c.send() // ack / push data / window updates
-			}
+			c.send()             // ack / push data / window updates
 
 		case <-c.writeCh: // Conn.Write signalled "new bytes buffered"
 			c.send()
@@ -115,6 +113,11 @@ func (c *Conn) loop() {
 func (c *Conn) handleSegment(seg *Segment) {
 	switch c.State() {
 	case tcb.StateListen:
+		if seg.tcpheader.Flags != FlagSYN {
+			// TODO Send RST
+			c.logger.Warn("conn: received new connection without SYN flag")
+			return
+		}
 		// Create the TCB state
 		c.TCB.Snd = tcb.Send{
 			ISS: 0, // TODO Make this a random number
@@ -127,13 +130,6 @@ func (c *Conn) handleSegment(seg *Segment) {
 			WND: seg.tcpheader.Window,
 			IRS: seg.tcpheader.SeqNumber,
 		}
-		if seg.tcpheader.Flags != FlagSYN {
-			// TODO Send RST
-			c.logger.Warn("conn: received new connection without SYN flag")
-			return
-		}
-		c.sendCtl(FlagSYN | FlagACK)
-		c.TCB.Snd.NXT = c.TCB.Snd.ISS + 1
 		c.TCB.State = tcb.StateSynReceived
 	case tcb.StateSynReceived:
 		// Tells us what the remote expects its position to be at
@@ -182,6 +178,7 @@ func (c *Conn) handleSegment(seg *Segment) {
 			c.logger.Debug("retrieving data from remote", "RCV.NXT", c.TCB.Recv.NXT, "state", c.State().String())
 		}
 	}
+	return
 }
 
 func (c *Conn) marshalTCP(dst []byte, flags uint8, payload []byte) ([]byte, error) {
@@ -215,40 +212,28 @@ func (c *Conn) marshalIP(dst []byte, payloadSize uint16) ([]byte, error) {
 	return dst[:i], nil
 }
 
-func (c *Conn) sendCtl(flags uint8) error {
-	buf := make([]byte, 20)
-	buf, err := c.marshalIP(buf, 0)
-	if err != nil {
-		return err
-	}
-	buf, err = c.marshalTCP(buf, flags, nil)
-	if err != nil {
-		return err
-	}
-	_, err = c.device.Write(slices.Concat(buf, nil))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (c *Conn) send() error {
-	if c.TCB.State != tcb.StateEstablished {
-		return nil
-	}
 	payload, i := c.sndBuf.NextChunk(c.TCB.Snd.NXT, c.TCB.Snd.WND)
 	buf := make([]byte, 20)
 	buf, err := c.marshalIP(buf, i)
 	if err != nil {
 		return err
 	}
-	buf, err = c.marshalTCP(buf, FlagACK, payload)
+	flags := tcpOutFlags[c.TCB.State]
+	buf, err = c.marshalTCP(buf, flags, payload)
 	if err != nil {
 		return err
 	}
 	_, err = c.device.Write(slices.Concat(buf, payload))
 	if err != nil {
 		return err
+	}
+	// Resolve the SND.NXT value
+	if flags&FlagSYN != 0 {
+		i++
+	}
+	if flags&FlagFIN != 0 {
+		i++
 	}
 	// Move the sequence forward by bytes written
 	c.TCB.Snd.NXT += uint32(i)

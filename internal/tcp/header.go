@@ -9,6 +9,8 @@ import (
 	"github.com/maxcelant/tcp-from-scratch/internal/checksum"
 )
 
+const HeaderMinLength = 20
+
 type Header struct {
 	SourcePort, DestPort uint16
 	SeqNumber, AckNumber uint32
@@ -20,19 +22,6 @@ type Header struct {
 	Kind, Length         uint8
 	MSS                  uint16
 }
-
-const (
-	FlagFIN = 1 << 0
-	FlagSYN = 1 << 1
-	FlagRST = 1 << 2
-	FlagPSH = 1 << 3
-	FlagACK = 1 << 4
-	FlagURG = 1 << 5
-)
-
-const HeaderMinLength = 20
-const FlagsMask = 0b0011_1111 // We only care about the low 6 bits for flags
-const offsetMask = 0b1111_0000
 
 var (
 	ErrTooShort = errors.New("tcp: buffer too short")
